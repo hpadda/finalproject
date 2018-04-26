@@ -1,0 +1,316 @@
+---
+title: "ADA Leukemia Final"
+author: "Hannah Padda & Semhal Ghessese"
+date: "4/19/2018"
+output:
+  word_document: default
+  html_document: default
+---
+
+
+###Loading Libraries 
+```{r}
+#install.packages("survival") #for survival analysis by group
+#install.packages("ggfortify") #for survival analysis by group
+#install.packages("survminer") #for pairwise diffs
+#install.packages("readxl") #for importing excel datasets
+#install.packages("tidyverse")
+#install.packages("lmtest")
+#install.packages("stargazer")
+#install.packages("descr")
+library(survminer)#for pairwise diffs
+library(survival) #for calculating KM values
+library(ggfortify) #for KM curves
+library(readxl) # for reading in excel file
+library(ggplot2) # for plotting KM curve
+library(tidyverse) # for various packages
+library(lmtest) #model comparison
+library(stargazer) #models presentation
+library(descr)
+
+```
+
+
+###Loading Data
+```{r}
+data <- read.csv("/Users/semhal ghessese/Downloads/leuk_withyear (1).csv") #loading data
+View(data)
+names(data) #viewing the variable names
+names(data)<-c("ID","age","sex","race","insurance","marital_status","COD","survmo","yr_dx")#renaming variables
+```
+
+
+
+###Recoding Data 
+```{r}
+#Recode cause specific death as 1/0 if the person died/did not die of leukemia
+data$event[
+data$COD=="Dead (attributable to this cancer dx)"]<-1
+data$event[
+data$COD=="Alive or dead of other cause"|
+data$COD=="N/A not first tumor"]<-0
+
+#Recode insurance status as a factor variable and label it
+data$insurance_f[
+data$insurance=="Insured"]<-0
+data$insurance_f[
+data$insurance=="Insured/No specifics"]<-1
+data$insurance_f[
+data$insurance=="Any Medicaid"]<-2
+data$insurance_f[
+data$insurance=="Uninsured"]<-3
+data$insurance_f[
+data$insurance=="Insurance status unknown"]<-4
+data$insurance_f<-factor(data$insurance_f,
+levels = c(0,1,2,3,4),
+labels = c("Insured", "Insured/No specifics", "Any Medicaid", "Uninsured", "Unknown"))
+
+#checking if race and sex are factor variable 
+str(data$race) #yes factor 
+str(data$sex) #yes factor
+```
+
+
+
+
+### Recoding data
+```{r}
+
+# recode age and surv_mo as numeric variables
+dataproject <- data %>%
+   mutate(Age_num=as.numeric(gsub("([0-9]+).*$", "\\1", age)),
+          surv_mo=as.numeric(gsub("([0-9]+).*$", "\\1", survmo)))
+View(dataproject)
+str(dataproject$Age_num)
+
+# recode race as a factor variable
+dataproject$race_cat[
+dataproject$race=="White"]<-0
+dataproject$race_cat[
+dataproject$race=="Black"]<-1
+dataproject$race_cat[
+dataproject$race=="American Indian/Alaska Native"]<-2
+dataproject$race_cat[
+dataproject$race=="Asian or Pacific Islander"]<-3
+dataproject$race_cat<-factor(dataproject$race_cat,
+levels = c(0,1,2,3),
+labels = c("White", "Black", "American Indian/AK Native", "Asian Pacific Islander"))
+```
+
+
+
+## Recoding data
+```{r}
+# recode marital status as a factor varaible
+dataproject$marital_cats[
+dataproject$marital_status=="Married (including common law)"]<-0
+dataproject$marital_cats[
+dataproject$marital_status=="Single (never married)"]<-1
+dataproject$marital_cats[
+dataproject$marital_status=="Separated"]<-2
+dataproject$marital_cats[
+dataproject$marital_status=="Divorced"]<-3
+dataproject$marital_cats[
+dataproject$marital_status=="Widowed"]<-4
+dataproject$marital_cats[
+dataproject$marital_status=="Unknown"]<-5
+dataproject$marital_cats<-factor(dataproject$marital_cats,
+levels = c(0,1,2,3,4,5),
+labels = c("Married (including common law","Single (never married)", "Separated","Divorced","Widowed","Unknown"))
+
+levels(dataproject$marital_cats)<-c("Married (including common law","Single (never married)", "Separated","Divorced","Widowed",NA)
+
+# dispaly newly coded marital status
+table(dataproject$marital_cats)
+str(dataproject$marital_cats)
+```
+
+
+
+### Create a complete dataset with out missing values
+```{r}
+datacomplete<-dataproject[which(dataproject$marital_cats!='NA' & dataproject$race_cat!='NA' & dataproject$Age_num!= 'NA' & dataproject$sex!='NA' & dataproject$insurance_f!= 'NA' & dataproject$surv_mo!= 'NA' & dataproject$Age_num>19),]
+View(datacomplete)
+
+```
+
+
+
+###Getting descriptives
+```{r}
+table(datacomplete$marital_cats,datacomplete$event)
+table(datacomplete$race,datacomplete$event)
+table(datacomplete$insurance_f,datacomplete$event)
+mytable <- table(datacomplete$marital_cats,datacomplete$event,datacomplete$race)
+ftable(mytable)
+table(datacomplete$marital_cats,datacomplete$insurance_f)
+```
+
+
+
+
+## Restrict analysis just for adults
+```{r}
+adultsdata<-dataproject[which(dataproject$Age_num>=19),]
+View(adultsdata)
+```
+
+
+
+## Create Kaplan-Meier curves to determine survival time by marital status, race, sex and insurance status
+
+###Kaplan-Meier by Relationship Status 
+```{r}
+LE.surv.mar <- survfit(Surv(surv_mo, event) ~ marital_cats,adultsdata) #calculates KM survivor function values for plotting
+summary(LE.surv.mar) #get KM values
+autoplot(LE.surv.mar) + labs(x="Survival months", y="Proportion Surviving", title="KM survival plots for Leukemia Survival by Relationship Status") #using ggfortify library to calculate fancy KM plots with confidence intervals
+fit= survfit(Surv(surv_mo, event) ~ marital_cats, adultsdata)
+summary(fit)$table
+```
+- Those who were widowed had a lower proportion of survival when compared to married patients
+
+
+#### Pairwise analysis between groups of marital status
+```{r}
+survdiff(Surv(surv_mo, event) ~ marital_cats,data=adultsdata)
+pairwise_survdiff(Surv(surv_mo, event) ~ marital_cats,data=adultsdata)
+```
+- we found siginifcant diffrence in mean survival time between married and single, married and widowed, single and divorced, single and widowed, separated and widowed,and divorced and widowed. 
+
+
+
+###Kaplan Meier by Race
+```{r}
+LE.surv_race <- survfit(Surv(surv_mo, event) ~ race_cat, adultsdata) #calculates KM survivor function values for plotting
+summary(LE.surv_race) #get KM values
+autoplot(LE.surv_race) + labs(x="Survival months", y="Proportion Surviving", title="KM survival plots for Leukemia Survival by Race") #using ggfortify library to calculate fancy KM plots with confidence intervals
+```
+- Those who identified as American Indian/Ak Native had better survival outcome when compared to those who identified as Black
+
+
+#### Pairwise anaylsis
+```{r}
+survdiff(Surv(surv_mo, event) ~ race,data=adultsdata)
+pairwise_survdiff(Surv(surv_mo, event) ~ race,data=adultsdata)
+```
+
+-The only siginifcant diffrence was between white and Asian Pacific Islanders
+
+
+
+###Kaplan Meier by Insurance Status 
+```{r}
+LE.surv <- survfit(Surv(surv_mo, event) ~ insurance_f, adultsdata) #calculates KM survivor function values for plotting
+summary(LE.surv) #get KM values
+autoplot(LE.surv) + labs(x="Survival months", y="Proportion Surviving", title="KM survival plots for Leukemia Survival by Insurance Status") #using ggfortify library to calculate fancy KM plots with confidence intervals
+fit= survfit(Surv(surv_mo, event) ~ insurance_f, adultsdata)
+summary(fit)$table
+```
+- It appers to be that uninsured patients had better survival outcome than insured patients.
+
+```{r}
+survdiff(Surv(surv_mo, event) ~ insurance_f,data=adultsdata)
+pairwise_survdiff(Surv(surv_mo, event) ~ insurance_f,data=adultsdata)
+```
+- The pairwise anaylsis by insurance status found that there was siginifcant difference in mean survival time between insured & insured(not specific), insured & uninsured,insured/ No specifics & any Medicaid,uninsured, unknown, Any medicaid & unknown, Uninsured & unknown 
+
+
+
+###Kaplan Meier by Sex 
+```{r}
+LE.surv4 <- survfit(Surv(surv_mo, event) ~ sex, adultsdata) #calculates KM survivor function values for plotting
+summary(LE.surv4) #get KM values
+autoplot(LE.surv4) + labs(x="Survival months", y="Proportion Surviving", title="KM survival plots for Leukemia Survival by Sex") #using ggfortify library to calculate fancy KM plots with confidence intervals
+```
+
+- Both female and male had comparable survival outcomes and there was no siginifcant difference in mean survival time between the two.
+
+```{r}
+survdiff(Surv(surv_mo, event) ~ sex,data=adultsdata)
+pairwise_survdiff(Surv(surv_mo, event) ~ sex,data=adultsdata)
+```
+
+
+### Run univariate Cox proportional hazards models to calculate HRs and 95% CIs for associations between death and predictors including race, insurance status, and marital status 
+
+####Cox PH by Race
+```{r}
+#Univariate by race
+race.mod<-coxph(Surv(surv_mo, event)~race, adultsdata, ties="breslow")#using ties = Breslow
+summary(race.mod)
+```
+
+
+
+####Cox PH for Insurance 
+```{r}
+ins.mod<-coxph(Surv(surv_mo, event)~insurance_f, adultsdata, ties="breslow")#using ties = Breslow
+summary(ins.mod)
+```
+
+
+
+####Cox PH for Relationship Status
+```{r}
+mar.mod<-coxph(Surv(surv_mo, event)~marital_cats, adultsdata, ties="breslow")
+summary(mar.mod)
+```
+
+-There was lower survival probabilities of single and widowed patients when compared to married patients(before adjusting for age)
+
+
+
+#### Marital status model adjusted for age
+```{r}
+marage.mod<-coxph(Surv(surv_mo, event)~marital_cats + Age_num, adultsdata, ties="breslow")
+summary(marage.mod)
+```
+After adjusting for age, those who were single had 1.299 (95% CI 1.193, 1.415) times higher hazard of death than those who were married.For those people who were widowed had 1.195(95% CI  1.107, 3.430) times the hazard of breast cancer death than those who were privaltely insured people at the time of diagnosis.
+
+
+
+#### Check if the interaction term between age and marital status is siginifcant
+```{r interaction}
+mar_int_age.mod<-coxph(Surv(surv_mo, event)~marital_cats + Age_num + Age_num*marital_cats, adultsdata, ties="breslow")
+summary(mar_int_age.mod)
+```
+
+
+#### Using LR test, detrmine if there is significant diffrence between the adjusted and unadjusted cox regression model
+```{r}
+lrtest(mar.mod, marage.mod)
+```
+- The likelihood ratio test indicates that the model that controlled for age, to predict the hazard of death from AML by marital status had significantly improved fit compared to the model before adjusting for age (p=2.2e-16)
+
+#### Adjusted model by age
+```{r}
+mar_df <- with(adultsdata, data.frame(marital_cats = c("Married (including common law","Single (never married)", "Separated","Divorced","Widowed",NA), Age_num=rep(mean(Age_num, na.rm = TRUE),2)))
+mar_df
+
+ggsurvplot(survfit(marage.mod, newdata = mar_df), data=adultsdata, conf.int = FALSE, legend.labs=c("Married (including common law","Single (never married)", "Separated","Divorced","Widowed",NA),xlim = c(0, 22), ggtheme = theme_minimal())
+```
+
+##Overall adjusted model for sex, age, race and insurance status
+
+```{r}
+adj.ins.mod.all<-coxph(Surv(surv_mo, event)~marital_cats + Age_num + sex + race_cat + insurance_f, adultsdata, ties="breslow")#using ties = Breslow
+summary(adj.ins.mod.all)
+
+## After adjusting for age, sex, race and insurance status, being single divorced, being widowed are all associated with stastically siginificat worse survival outcomes when compared to those who are married patients.
+```
+
+
+###Create a table to summarize findings from  the overall adjusted cox regression model
+```{r}
+fit <- coxph(Surv(surv_mo, event)~marital_cats + Age_num + sex + race_cat + insurance_f,adultsdata, ties="breslow")
+# Create a col name
+HR <- round(exp(coef(fit)), 2)
+CI <- round(exp(confint(fit)), 2)
+P <- round(coef(summary(fit))[,5], 3)
+# Names the columns of CI
+colnames(CI) <- c("Lower", "Higher")
+# Bind columns together as dataset
+table2 <- as.data.frame(cbind(HR, CI, P))
+table2
+```
+
